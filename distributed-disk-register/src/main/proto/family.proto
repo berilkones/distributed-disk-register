@@ -22,11 +22,21 @@ message ChatMessage {
   string fromHost = 2;
   int32 fromPort = 3;
   int64 timestamp = 4;
+  int64 id = 5;  
+}
+
+message GetRequest {
+  int64 id = 1;
+}
+
+message GetResponse {
+  string content = 1;
+  bool found = 2;
 }
 
 service FamilyService {
   rpc Join (NodeInfo) returns (FamilyView);
   rpc GetFamily (Empty) returns (FamilyView);
-
   rpc ReceiveChat (ChatMessage) returns (Empty);
+  rpc GetMessage (GetRequest) returns (GetResponse);  
 }
