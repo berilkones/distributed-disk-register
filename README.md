@@ -1,235 +1,71 @@
-Distributed-Disk-Registery (gRPC + TCP)
-=======================================
-
----
-
-
-# gRPC + Protobuf + TCP Hybrid Distributed Server
-
-Bu proje, birden fazla sunucunun dağıtık bir küme (“family”) oluşturduğu, **gRPC + Protobuf** ile kendi aralarında haberleştiği ve aynı zamanda **lider üye (cluster gateway)** üzerinden dış dünyadan gelen **TCP text mesajlarını** tüm üyelere broadcast ettiği hibrit bir mimari örneğidir.
-
-Sistem Programlama, Dağıtık Sistemler veya gRPC uygulama taslağı olarak kullanınız.
-
----
-
-##  Özellikler
-
-### ✔ Otomatik Dağıtık Üye Keşfi
-
-Her yeni Üye:
-
-* 5555’ten başlayarak boş bir port bulur
-* Kendinden önce gelen üyelere gRPC katılma (Join) isteği gönderir
-* Aile (Family) listesine otomatik dahil olur.
-
-### ✔ Lider Üye (Cluster Gateway)
-
-İlk başlayan Üye (port 5555) otomatik olarak **lider** kabul edilir ve:
-
-* TCP port **6666** üzerinden dış dünyadan text mesajı dinler
-* Her mesajı Protobuf formatına dönüştürür
-* Tüm diğer üyelere gRPC üzerinden gönderir
-
-### ✔ gRPC + Protobuf İçi Mesajlaşma
-
-Üyeler kendi aralarında sadece **protobuf message** ile haberleşir:
-
-```proto
-message ChatMessage {
-  string text = 1;
-  string fromHost = 2;
-  int32 fromPort = 3;
-  int64 timestamp = 4;
-}
-```
-
-### ✔ Aile (Family) Senkronizasyonu
-
-Her üye, düzenli olarak diğer aile üyeleri listesini ekrana basar:
-
-```
-======================================
-Family at 127.0.0.1:5557 (me)
-Time: 2025-11-13T21:05:00
-Members:
- - 127.0.0.1:5555
- - 127.0.0.1:5556
- - 127.0.0.1:5557 (me)
-======================================
-```
-
-### ✔ Üye Düşmesi (Failover)
-
-Health-check mekanizması ile kopan (offline) üyeler aile listesinden çıkarılır.
-
----
-
-## 📁 Proje Yapısı
-
-```
-distributed-disk-register/
-│
-├── pom.xml
-├── README.md
-├── src
-│   └── main
-│       ├── java/com/example/family/
-│       │       ├── NodeMain.java
-│       │       ├── NodeRegistry.java
-│       │       └── FamilyServiceImpl.java
-│       │
-│       └── proto/
-│               └── family.proto
-```
-
-## 👨🏻‍💻 Kodlama
-
-Yüksek seviyeli dillerde yazılım geliştirme işlemi basit bir editörden ziyade gelişmiş bir IDE (Integrated Development Environment) ile yapılması tavsiye edilmektedir. JVM ailesi dillerinin en çok tercih edilen [IntelliJ IDEA](https://www.jetbrains.com/idea/) aracını edu' lu mail adresinizle öğrenci lisanslı olarak indirip kullanabilirsiniz. Bu projeyi diskinize klonladıktan sonra IDEA' yı açıp, üst menüden _Open_ seçeneği projenin _pom.xml_ dosyasını seçtiğinizde projeniz açılacaktır. 
-
-
----
-
-## 🔧 Derleme
-
-Proje dizininde (pom.xml in olduğu):
-
-```bash
-mvn clean compile
-```
-
-Bu komut:
-
-* `family.proto` → gRPC Java sınıflarını üretir
-* Tüm server kodlarını derler
-
----
-
-## ▶️ Çalıştırma
-
-Her bir terminal yeni bir üye demektir.
-
-### **Terminal 1 – Lider Üye**
-
-```bash
-mvn exec:java -Dexec.mainClass=com.example.family.NodeMain
-```
-
-Çıktı:
-
-```
-Node started on 127.0.0.1:5555
-Leader listening for text on TCP 127.0.0.1:6666
-...
-```
-
-![Sistem Başlatma](https://github.com/ismailhakkituran/distributed-disk-register/blob/main/Distributed%20System%20Start-start.png)
-
-
-### **Terminal 2, 3, 4… – Diğer Üyeler**
-
-Her yeni terminal:
-
-```bash
-mvn exec:java -Dexec.mainClass=com.example.family.NodeMain
-```
-
-Üyeler 5556, 5557, 5558… portlarını otomatik bulur
-ve aileye katılır.
-
----
-![Üyelerin aileye katılması](https://github.com/ismailhakkituran/distributed-disk-register/blob/main/Distributed%20System%20Start-family.png)
-
-## Mesaj Gönderme (TCP → Lider Üye)
-
-Lider Üye, dış dünyadan gelen text’i 6666 portunda bekler.
-
-Yeni bir terminal aç:
-
-```bash
-nc 127.0.0.1 6666
-```
-
-Veya:
-
-```bash
-telnet 127.0.0.1 6666
-```
-
-Mesaj yaz:
-
-```
-Merhaba distributed world!
-```
-
-![Sistem Başlatma](https://github.com/ismailhakkituran/distributed-disk-register/blob/main/Distributed%20System%20Start-telnet.png)
-
-###  Sonuç
-
-Bu mesaj protobuf mesajına çevrilip tüm üyelere gider.
-
----
-
-### Diğer Üyelerdeki örnek çıktı:
-
-```
-💬 Incoming message:
-  From: 127.0.0.1:5555
-  Text: Merhaba distributed world!
-  Timestamp: 1731512345678
---------------------------------------
-```
-
----
-
-##  Çalışma Prensibi
-
-###  1. Dağıtık Üye Keşfi
-
-Yeni Üye, kendinden önceki portları gRPC ile yoklar:
-
-```
-5555 → varsa Join
-5556 → varsa Join
-...
-```
-
-###  2. Lider Üye (Port 5555)
-
-Lider Üye:
-
-* TCP 6666’dan text alır,
-* Protobuf `ChatMessage` nesnesine çevirir,
-* Tüm kardeş üyelere gRPC RPC gönderir.
-
-###  3. Family Senkronizasyonu
-
-Her üye 10 saniyede bir kendi ailesini ekrana basar.
-
----
-
-##  Ödev / Bundan Sonra Yapılacaklar
-
-Öğrenciler:
-
-* Üye düşme tespiti (heartbeat)
-* Leader election
-* gRPC streaming ile real-time chat
-* Redis-backed cluster membership
-* Broadcast queue implementasyonu
-* TCP’den gelen mesajların loglanması
-* Çoklu lider senaryosu & conflict resolution
-
-gibi özellikler ekleyebilir.
-
----
-
-## Lisans
-
-MIT — Eğitim ve araştırma amaçlı serbestçe kullanılabilir.
-
----
-
-##  Katkı
-
-Pull request’e her zaman açığız!
-Yeni özellik önerileri için issue açabilirsiniz.
+✔ Otomatik Dağıtık Üye Keşfi
+Her node başlatıldığında 5555’ten başlayarak uygun bir port bulur.
+Node, kendisini NodeInfo (host, port) olarak tanımlar.
+Daha önce başlatılmış node’lara gRPC üzerinden Join isteği gönderir.
+Join yanıtında dönen FamilyView ile mevcut küme üyeleri öğrenilir.
+Tüm aktif üyeler NodeRegistry içerisinde tutulur.
+✔ Lider Üye (Cluster Gateway)
+İlk başlatılan node (port 5555) otomatik olarak lider kabul edilir.
+Lider node:
+gRPC servislerini sunar
+Aynı zamanda TCP 6666 portu üzerinden dış dünya ile iletişim kurar
+Dış dünyadan gelen komutlar lider tarafından işlenip kümeye yayılır.
+✔ gRPC Tabanlı Aile (Family) Servisi
+Aşağıdaki gRPC RPC’leri tanımlanmış ve kullanılmıştır:
+Join(NodeInfo) → FamilyView
+GetFamily(Empty) → FamilyView
+ReceiveChat(ChatMessage) → Empty
+GetMessage(GetRequest) → GetResponse
+Tüm node’lar bu servisleri kullanarak birbirleriyle haberleşir.
+✔ SET Komutu – Dağıtık Disk Registery (Yazma)
+TCP üzerinden gelen SET <id> <content> komutu:
+Lider node tarafından karşılanır
+gRPC ChatMessage nesnesine dönüştürülür
+Mesaj içeriği:
+id (int64)
+content
+fromHost, fromPort
+timestamp
+Mesaj, tolerans değerine göre birden fazla node’a replike edilir.
+Her node gelen veriyi diskine yazar:
+Dosya adı: data_<port>.txt
+Format: id:content
+✔ GET Komutu – Dağıtık Okuma
+TCP üzerinden gelen GET <id> komutu lider tarafından işlenir.
+Lider node:
+Önce kendi diskinde arama yapar
+Bulamazsa diğer node’lara gRPC GetMessage isteği gönderir
+İlgili id herhangi bir node’da bulunursa içerik TCP istemcisine döndürülür.
+Hiçbir node’da bulunamazsa NOT_FOUND cevabı verilir.
+✔ Replikasyon ve Hata Toleransı
+Replikasyon sayısı tolerance.conf dosyasından okunur.
+Dosya yoksa varsayılan tolerans değeri 2’dir.
+Replikasyon sırasında:
+Erişilemeyen node’lar atlanır
+Diğer node’lara gönderim devam eder
+Bu yapı sayesinde sistem kısmi node hatalarına dayanıklıdır.
+✔ Yük Dengeleme (ID’ye Göre Dağıtım)
+Replikasyon yapılacak node’lar port numarasına göre sıralanır.
+Mesajın id değeri kullanılarak başlangıç node’u seçilir:
+id % node_sayısı
+Böylece yazma yükü node’lar arasında dengelenir.
+✔ Sağlık Kontrolü (Health Check)
+Node’lar belirli aralıklarla birbirlerini gRPC üzerinden kontrol eder:
+GetFamily RPC çağrısı
+Erişilemeyen node’lar NodeRegistry’den otomatik olarak çıkarılır.
+Küme yapısı zamanla kendini günceller.
+✔ İzleme ve Debug Desteği
+Her node belirli aralıklarla konsola:
+Kendi kimliğini
+Family üyelerini
+Üye sayısını
+Tarih-saat bilgisini yazdırır
+Bu çıktı sayesinde dağıtık yapı gözlemlenebilir.
+Sonuç
+Bu proje:
+gRPC + Protobuf kullanarak dağıtık node haberleşmesini,
+TCP tabanlı dış istemci entegrasyonunu,
+Disk tabanlı dağıtık veri saklamayı,
+Replikasyon, hata toleransı ve sağlık kontrolü mekanizmalarını
+tek bir hibrit mimaride birleştirmektedir.
+Sistem Programlama, Dağıtık Sistemler ve gRPC tabanlı uygulamalar için örnek bir referans niteliğindedir.
